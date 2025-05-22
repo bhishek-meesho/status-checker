@@ -1,12 +1,83 @@
+// Package main implements a concurrent website status checker
+// that demonstrates Go's concurrency patterns using goroutines and channels.
 package main
 
 import (
 	"fmt"
 	"net/http"
+	"time"
 )
 
+// Site represents a website with its URL and current status
+type Site struct {
+	URL    string
+	Status string
+}
+
+// Constants for status messages
+const (
+	StatusUp   = "✅ UP"
+	StatusDown = "❌ DOWN"
+)
+
+// checkLink performs an HTTP GET request to check if a website is accessible.
+// It sends the result back through the provided channel.
+//
+// Parameters:
+//   - link: The URL to check
+//   - ch: Channel to send the check result
+//
+// The function demonstrates basic error handling and channel communication.
+func checkLink(link string, ch chan Site) {
+	// Perform the HTTP GET request
+	_, err := http.Get(link)
+
+	// Create a Site object to store the result
+	result := Site{URL: link}
+
+	if err != nil {
+		result.Status = StatusDown
+		ch <- result
+		return
+	}
+
+	result.Status = StatusUp
+	ch <- result
+}
+
+// monitorSites initiates concurrent monitoring of multiple websites
+// and returns a map of their statuses.
+//
+// Parameters:
+//   - sites: Slice of website URLs to monitor
+//
+// Returns:
+//   - map[string]string: Map of website URLs to their current status
+func monitorSites(sites []string) map[string]string {
+	// Create a channel to receive results
+	// The channel type is Site to handle structured data
+	ch := make(chan Site)
+
+	// Map to store the final status of each site
+	status := make(map[string]string)
+
+	// Launch a goroutine for each site
+	for _, site := range sites {
+		go checkLink(site, ch)
+	}
+
+	// Collect results from all goroutines
+	for range sites {
+		result := <-ch
+		status[result.URL] = result.Status
+	}
+
+	return status
+}
+
 func main() {
-	links := []string{
+	// List of websites to monitor
+	sites := []string{
 		"https://www.google.com",
 		"https://www.facebook.com",
 		"https://www.twitter.com",
@@ -15,45 +86,23 @@ func main() {
 		"https://www.youtube.com",
 	}
 
-	//create a channel -> a pipe that allows us to send and receive messages between goroutines
-	ch := make(chan string)
+	// Print start message
+	fmt.Println("Starting website status checker...")
+	fmt.Printf("Monitoring %d sites...\n\n", len(sites))
 
-	for _, link := range links {
+	// Record start time for performance measurement
+	startTime := time.Now()
 
-		//launch a goroutine -> a lightweight thread managed by the Go runtime and
-		// channel is passed as an argument to the function - this allows the function to send a message back to the main goroutine
-		go checkLink(link, ch) // this is a blocking call - it will wait for the function to finish and then send a message back to the main goroutine
-		// if we don't pass the channel, the function will not be able to send a message back to the main goroutine
-		// the channel is used to communicate between the main and the goroutine
+	// Monitor sites concurrently and get results
+	results := monitorSites(sites)
 
-	}
-	//receive a message from the channel
-	// <- is the receive operator
-	msg := <-ch // this is the message from the channel
-
-	// print the message
-	fmt.Println(msg)
-
-}
-
-func checkLink(link string, ch chan string) {
-	_, err := http.Get(link)
-
-	if err != nil {
-		// fmt.Println("❌", link, "might be down!")
-		ch <- "❌ " + link + " might be down!"
-		return
+	// Print results in a formatted way
+	fmt.Println("Results:")
+	fmt.Println("--------")
+	for url, status := range results {
+		fmt.Printf("%-30s %s\n", url, status)
 	}
 
-	// fmt.Println("✅", link, "is up!")
-
-	// send a message to the channel
-	// <- is the send operator
-	ch <- "✅ " + link + " is up!" // this is the message we want to send to the channel
-
-	//diff between send and receive is that send is used to send a message to the channel and receive is used to receive a message from the channel
-	// but the <- operator can be used to send and receive messages - it depends on the direction of the arrow
-	// ch <- "✅" is sending a message to the channel
-	// msg := <-ch is receiving a message from the channel
-
+	// Print execution time
+	fmt.Printf("\nTotal execution time: %v\n", time.Since(startTime))
 }
